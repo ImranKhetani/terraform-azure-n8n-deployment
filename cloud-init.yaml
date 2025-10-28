@@ -1,0 +1,41 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - apt-transport-https
+  - gnupg
+  - nginx
+  - software-properties-common
+
+write_files:
+  - path: /etc/nginx/sites-available/n8n
+    permissions: '0644'
+    content: |
+      server {
+          listen 80;
+          server_name n8nworkflow.centralindia.cloudapp.azure.com;
+
+          location / {
+              proxy_pass http://localhost:5678;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+      }
+
+runcmd:
+  - mkdir -p /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo \"${UBUNTU_CODENAME:-$VERSION_CODENAME}\") stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - usermod -aG docker azureuser
+  - docker run -d --name n8n -p 5678:5678 -e GENERIC_TIMEZONE="Asia/Kolkata" -e TZ="Asia/Kolkata" -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true -e N8N_RUNNERS_ENABLED=true -e N8N_SECURE_COOKIE=false -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n
+  - ln -s /etc/nginx/sites-available/n8n /etc/nginx/sites-enabled/n8n
+  - nginx -t
+  - systemctl restart nginx
+  - apt-get install -y certbot python3-certbot-nginx
+  - sudo certbot --nginx --non-interactive --agree-tos --email <email-address> -d <domain-name>
